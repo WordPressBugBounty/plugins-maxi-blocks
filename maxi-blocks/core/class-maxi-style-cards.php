@@ -449,7 +449,6 @@ class MaxiBlocks_StyleCards
             if ($sc_string) {
                 $sc_string = maybe_unserialize($sc_string);
 
-                
                 // Replace dark link color
                 $sc_string = str_replace(
                     '--maxi-dark-link:rgba(var(--maxi-dark-color-5,255,255,255),1);',
@@ -471,7 +470,7 @@ class MaxiBlocks_StyleCards
                 );
 
                 $updated = true;
-                
+
             }
         }
 
