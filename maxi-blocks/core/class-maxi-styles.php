@@ -147,13 +147,18 @@ class MaxiBlocks_Styles
 
             foreach ($scripts as &$script) {
                 $js_var = str_replace('-', '_', $script);
-                $js_var_to_pass =
-                    'maxi' .
+                $js_var_to_pass = $script === 'relations' ? 'maxi' .
                     str_replace(
                         ' ',
                         '',
                         ucwords(str_replace('-', ' ', $script))
-                    ).'Legacy';
+                    ).'Legacy' : 'maxi' .
+                    str_replace(
+                        ' ',
+                        '',
+                        ucwords(str_replace('-', ' ', $script))
+                    );
+
                 $js_script_name = 'maxi-' . $script;
                 $js_script_path = '//js//min//' . $js_script_name . '.min.js';
                 // $js_script_path = '//js//' . $js_script_name . '.js';
@@ -185,14 +190,14 @@ class MaxiBlocks_Styles
                     }
 
                     wp_enqueue_script(
-                        $js_script_name.'-legacy',
+                        $script === 'relations' ? $js_script_name.'-legacy' : $js_script_name,
                         plugins_url($js_script_path, dirname(__FILE__)),
                         array(),
                         MAXI_PLUGIN_VERSION,
                         true
                     );
 
-                    wp_localize_script($js_script_name.'-legacy', $js_var_to_pass, $this->get_block_data($js_var, $meta));
+                    wp_localize_script($script === 'relations' ? $js_script_name.'-legacy' : $js_script_name, $js_var_to_pass, $this->get_block_data($js_var, $meta));
                 }
             }
         }
@@ -1339,7 +1344,7 @@ class MaxiBlocks_Styles
 
         if (isset($content_block['css_value'])) {
             if ($block_name === 'maxi-blocks/container-maxi' && $props['isFirstOnHierarchy'] && strpos($content_block['css_value'], 'min-width:100%') !== false) {
-                if (self::$active_theme === 2023 || self::$active_theme === 2024) {
+                if (self::$active_theme === 2023 || self::$active_theme === 2024 || self::$active_theme === 2025) {
                     $new_styles = "body.maxi-blocks--active .has-global-padding > #$unique_id {
 					margin-right: calc(var(--wp--style--root--padding-right) * -1) !important;
 					margin-left: calc(var(--wp--style--root--padding-left) * -1) !important;
@@ -1954,6 +1959,9 @@ class MaxiBlocks_Styles
         }
         if ('Twenty Twenty-Two' === $current_theme->name || 'twentytwentytwo' === $current_theme->template) {
             return 2022;
+        }
+        if ('Twenty Twenty-Five' === $current_theme->name || 'twentytwentyfive' === $current_theme->template) {
+            return 2025;
         }
         if ('Astra' === $current_theme->name || 'astra' === $current_theme->template) {
             return 'astra';
