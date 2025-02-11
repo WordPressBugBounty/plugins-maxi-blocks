@@ -35,7 +35,13 @@ class MaxiBlocks_StyleCards
     public function __construct()
     {
         add_action('admin_enqueue_scripts', [$this, 'enqueue_styles']);
-        add_action('wp_enqueue_scripts', [$this, 'enqueue_styles']);
+
+        // Wrap wp_enqueue_scripts in wp action to check for blocks
+        add_action('wp', function () {
+            if (class_exists('MaxiBlocks_Blocks') && MaxiBlocks_Blocks::has_blocks()) {
+                add_action('wp_enqueue_scripts', [$this, 'enqueue_styles']);
+            }
+        });
 
         // Run the migration once
         add_action('admin_init', [$this, 'run_link_palette_migration']);
@@ -381,14 +387,28 @@ class MaxiBlocks_StyleCards
 
     public static function get_default_style_card()
     {
+        $file_path = MAXI_PLUGIN_DIR_PATH . "core/defaults/defaultSC.json";
+
+        // First try direct file reading
+        if (file_exists($file_path) && is_readable($file_path)) {
+            $json = file_get_contents($file_path);
+            if ($json !== false) {
+                return $json;
+            }
+        }
+
+        // Fallback to WP_Filesystem if direct reading fails
         global $wp_filesystem;
 
         if (empty($wp_filesystem)) {
             require_once ABSPATH . '/wp-admin/includes/file.php';
-            WP_Filesystem();
+            WP_Filesystem(false, false, true); // Initialize without credentials check
         }
 
-        $file_path = MAXI_PLUGIN_DIR_PATH . "core/defaults/defaultSC.json";
+        // If WP_Filesystem is still not available, return null
+        if (empty($wp_filesystem)) {
+            return null;
+        }
 
         // Ensure the file exists before attempting to read
         if (!$wp_filesystem->exists($file_path)) {

@@ -121,6 +121,14 @@ if (!class_exists('MaxiBlocks_Dashboard')):
                     )
                 );
 
+                wp_localize_script(
+                    'maxi-admin',
+                    'maxiAiSettings',
+                    array(
+                        'defaultModel' => get_option('maxi_ai_model', 'gpt-3.5-turbo')
+                    )
+                );
+
             }
         }
 
@@ -780,12 +788,7 @@ if (!class_exists('MaxiBlocks_Dashboard')):
             $content .= $this->generate_setting($description, 'openai_api_key_option', '', 'password');
 
             $description = '<h4>'.__('ChatGPT AI Model', 'maxi-blocks').'</h4>';
-            $content .= $this->generate_setting($description, 'maxi_ai_model', '', 'dropdown', ['list' => [
-                'gpt-4',
-                'gpt-4-32k',
-                'gpt-3.5-turbo',
-                'gpt-3.5-turbo-16k',
-            ]]);
+            $content .= $this->generate_setting($description, 'maxi_ai_model', '', 'dropdown', ['list' => []]);
 
             $content .= get_submit_button();
 
@@ -1001,6 +1004,7 @@ if (!class_exists('MaxiBlocks_Dashboard')):
         public function generate_custom_dropdown($option, $args)
         {
             $list = isset($args['list']) ? $args['list'] : [];
+            $is_ai_model = $option === 'maxi_ai_model';
 
             $dropdown = '<div class="maxi-dashboard_main-content_accordion-item-content-switcher">';
             $dropdown .= '<div class="maxi-dashboard_main-content_accordion-item-content-switcher__dropdown">';
@@ -1008,14 +1012,19 @@ if (!class_exists('MaxiBlocks_Dashboard')):
 
             $option_value = get_option($option) ? get_option($option) : 'gpt-3.5-turbo';
 
-            if(($key = array_search($option_value, $list)) !== false) {
-                unset($list[$key]);
-                array_unshift($list, $option_value);
-            }
+            if ($is_ai_model) {
+                // For AI model dropdown, show loading placeholder
+                $dropdown .= '<option value="">'.__('', 'maxi-blocks').'</option>';
+            } else {
+                // For other dropdowns, process the static list
+                if(($key = array_search($option_value, $list)) !== false) {
+                    unset($list[$key]);
+                    array_unshift($list, $option_value);
+                }
 
-
-            foreach($list as $value) {
-                $dropdown .= '<option value="'.$value.'">'.$value.'</option>';
+                foreach($list as $value) {
+                    $dropdown .= '<option value="'.$value.'">'.$value.'</option>';
+                }
             }
 
             $dropdown .= '</select>';
@@ -1147,16 +1156,43 @@ if (!class_exists('MaxiBlocks_Dashboard')):
 
         public function delete_all_files($folder)
         {
-            global $wp_filesystem;
-
-            if (empty($wp_filesystem)) {
-                require_once ABSPATH . '/wp-admin/includes/file.php';
-                WP_Filesystem();
-            }
-
             $folder = trailingslashit($folder);
 
-            // Ensure the folder exists before attempting to delete
+            // Try direct file operations first
+            if (file_exists($folder) && is_dir($folder)) {
+                $files = scandir($folder);
+
+                if ($files !== false) {
+                    foreach ($files as $file) {
+                        if ($file === '.' || $file === '..') {
+                            continue;
+                        }
+
+                        $file_path = $folder . $file;
+
+                        if (is_dir($file_path)) {
+                            $this->delete_all_files($file_path);
+                        } elseif (is_file($file_path)) {
+                            @unlink($file_path);
+                        }
+                    }
+
+                    @rmdir($folder);
+                    return;
+                }
+            }
+
+            // Fallback to WP_Filesystem if direct operations fail
+            global $wp_filesystem;
+            if (empty($wp_filesystem)) {
+                require_once ABSPATH . '/wp-admin/includes/file.php';
+                WP_Filesystem(false, false, true);
+            }
+
+            if (empty($wp_filesystem)) {
+                return;
+            }
+
             if (!$wp_filesystem->exists($folder)) {
                 return;
             }
@@ -1166,14 +1202,13 @@ if (!class_exists('MaxiBlocks_Dashboard')):
             foreach ($files as $file) {
                 $file_path = $folder . $file['name'];
 
-                if ($file['type'] === 'd') { // Check if it's a directory
+                if ($file['type'] === 'd') {
                     $this->delete_all_files($file_path);
                 } else {
                     $wp_filesystem->delete($file_path);
                 }
             }
 
-            // Finally, remove the empty folder itself
             $wp_filesystem->rmdir($folder);
         }
 
@@ -1192,7 +1227,7 @@ if (!class_exists('MaxiBlocks_Dashboard')):
             if (!get_option('local_fonts_uploaded')) {
                 require_once plugin_dir_path(__DIR__) .
                     '../core/class-maxi-local-fonts.php';
-                MaxiBlocks_Local_Fonts::register();
+                MaxiBlocks_Local_Fonts::get_instance()->process_all_fonts();
             }
         }
 
