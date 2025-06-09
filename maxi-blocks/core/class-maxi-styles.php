@@ -241,7 +241,7 @@ class MaxiBlocks_Styles
      * Legacy function
      * Apply content
      */
-    public function apply_content($name, $content, $id)
+    public function apply_content(string $name, $content, $id)
     {
         $is_content = $content && !empty($content);
         $is_template_part = is_string($name) && strpos($name, '-templates');
@@ -281,7 +281,7 @@ class MaxiBlocks_Styles
      * Legacy function
      * Get id
      */
-    public function get_id($is_template = false)
+    public function get_id(bool $is_template = false)
     {
         if (!$is_template) {
             global $post;
@@ -296,7 +296,7 @@ class MaxiBlocks_Styles
         $template_slug = get_page_template_slug();
         $template_id = $this->get_template_name() . '//';
 
-        if ($template_slug != '' && $template_slug !== false) {
+        if (!is_archive() && $template_slug != '' && $template_slug !== false) {
             if (is_search()) {
                 $template_id .= 'search';
             } else {
@@ -405,7 +405,7 @@ class MaxiBlocks_Styles
      * Legacy function
      * Gets content
      */
-    public function get_content($is_template = false, $id = null)
+    public function get_content(bool $is_template = false, $id = null)
     {
         global $post;
 
@@ -456,7 +456,7 @@ class MaxiBlocks_Styles
      * Legacy function
      * Gets post meta
      */
-    public function get_meta($id, $is_template = false)
+    public function get_meta($id, bool $is_template = false)
     {
         global $wpdb;
         $table_name = $wpdb->prefix . 'maxi_blocks_custom_data' . ($is_template ? '_templates' : '');
@@ -495,16 +495,14 @@ class MaxiBlocks_Styles
 
             return $response;
         }
-
     }
 
     /**
      * Legacy function
      * Gets post styles content
      */
-    public function get_styles($content)
+    public function get_styles(array $content)
     {
-
         $style =
             is_preview() || is_admin()
                 ? $content['prev_css_value']
@@ -523,7 +521,7 @@ class MaxiBlocks_Styles
      * Legacy function
      * Gets font styles content
      */
-    public function get_fonts($content)
+    public function get_fonts(array $content)
     {
         if (!isset($content['fonts_value'])) {
             return false;
@@ -841,7 +839,7 @@ class MaxiBlocks_Styles
      * Legacy function
      * Custom Meta
      */
-    public function custom_meta($metaJs, $is_template = false, $id = null)
+    public function custom_meta(string $metaJs, bool $is_template = false, ?string $id = null)
     {
         global $post;
         if ((!$is_template && (!$post || !isset($post->ID))) || empty($metaJs)) {
@@ -934,22 +932,42 @@ class MaxiBlocks_Styles
         }
 
         $changed_sc_colors = [];
+        $changed_custom_colors = [];
 
         if (!array_key_exists('_maxi_blocks_style_card', $style_card)) {
             $style_card['_maxi_blocks_style_card'] =
                 $style_card['_maxi_blocks_style_card_preview'];
         }
 
-        $style_card =
+        $style_card_vars =
             is_preview() || is_admin()
                 ? $style_card['_maxi_blocks_style_card_preview']
                 : $style_card['_maxi_blocks_style_card'];
 
         foreach ($color_vars as $color_key => $color_value) {
-            $start_pos = strpos($style_card, $color_key);
-            $end_pos = strpos($style_card, ';--', $start_pos);
+            // Check if this is a custom color
+            if (preg_match('/--maxi-(light|dark)-color-custom-(\d+)/', $color_key, $matches)) {
+                // Handle custom colors separately
+                $this->process_custom_color_change($style_card_vars, $color_key, $color_value, $changed_custom_colors);
+                continue;
+            }
+
+            $start_pos = strpos($style_card_vars, $color_key);
+            // If the color key doesn't exist in style card vars, skip it
+            if ($start_pos === false) {
+                continue;
+            }
+
+            $end_pos = strpos($style_card_vars, ';', $start_pos);
+            if ($end_pos === false) {
+                $end_pos = strpos($style_card_vars, '}', $start_pos);
+                if ($end_pos === false) {
+                    continue;
+                }
+            }
+
             $color_sc_value = substr(
-                $style_card,
+                $style_card_vars,
                 $start_pos + strlen($color_key) + 1,
                 $end_pos - $start_pos - strlen($color_key) - 1
             );
@@ -960,12 +978,16 @@ class MaxiBlocks_Styles
         }
 
         // In case there are changes, fix them
-        if (empty($changed_sc_colors)) {
+        if (empty($changed_sc_colors) && empty($changed_custom_colors)) {
             return $style;
         } else {
             $new_style = $style;
 
-            foreach ($changed_sc_colors as $color_key => $color_value) {
+            // Merge both color change arrays and apply all replacements in a single loop
+            $all_color_changes = array_merge($changed_sc_colors, $changed_custom_colors);
+
+            // Apply all color changes in a single pass
+            foreach ($all_color_changes as $color_key => $color_value) {
                 $old_color_str =
                     "rgba(var($color_key," . $color_vars[$color_key] . ')';
                 $new_color_str = "rgba(var($color_key," . $color_value . ')';
@@ -985,6 +1007,41 @@ class MaxiBlocks_Styles
             );
 
             return $new_style;
+        }
+    }
+
+    /**
+     * Process a change in custom color
+     *
+     * @param string $style_card_vars The style card variables
+     * @param string $color_key The color key
+     * @param string $color_value The current color value
+     * @param array &$changed_custom_colors Reference to array of changed custom colors
+     */
+    private function process_custom_color_change($style_card_vars, $color_key, $color_value, &$changed_custom_colors)
+    {
+        $start_pos = strpos($style_card_vars, $color_key);
+        // If the color key doesn't exist in style card vars, don't change it
+        if ($start_pos === false) {
+            return;
+        }
+
+        $end_pos = strpos($style_card_vars, ';', $start_pos);
+        if ($end_pos === false) {
+            $end_pos = strpos($style_card_vars, '}', $start_pos);
+            if ($end_pos === false) {
+                return;
+            }
+        }
+
+        $color_sc_value = substr(
+            $style_card_vars,
+            $start_pos + strlen($color_key) + 1,
+            $end_pos - $start_pos - strlen($color_key) - 1
+        );
+
+        if ($color_sc_value !== $color_value) {
+            $changed_custom_colors[$color_key] = $color_sc_value;
         }
     }
 
@@ -1498,7 +1555,7 @@ class MaxiBlocks_Styles
      * @param string|null $passed_content
      * @return array
      */
-    public function get_content_for_blocks_frontend($id = null, string $passed_content = null)
+    public function get_content_for_blocks_frontend(?int $id = null, ?string $passed_content = null)
     {
         global $post;
 
@@ -1507,6 +1564,7 @@ class MaxiBlocks_Styles
         } else {
             $post = get_post($id);
         }
+
         // Fetch blocks from template parts.
         $template_id = $this->get_id(true);
         $blocks = $this->fetch_blocks_by_template_id($template_id);
